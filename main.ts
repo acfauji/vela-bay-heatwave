@@ -12,13 +12,35 @@
 // Outside the grader's container, MAKEFUN_OUTPUT_DIR stands in for /output:
 //   mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
 
-import { cpSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildDossier } from './vendor/makefun-game.ts';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const out = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
+
+// Authored build instrumentation for Vela Bay Heatwave: a deterministic inventory of
+// the game folder before it is handed in. It touches no output bytes, so repeated runs
+// still produce a byte-for-byte identical dossier.
+const GAME_TITLE = 'Vela Bay Heatwave';
+const BUILD_TAG = 'VB-HEATWAVE-1.0';
+
+function gameEntryCount(dir: string): number {
+  let total = 0;
+  for (const name of readdirSync(dir)) {
+    const path = join(dir, name);
+    total += 1;
+    if (statSync(path).isDirectory()) total += gameEntryCount(path);
+  }
+  return total;
+}
+
+const gameDir = join(here, 'game');
+if (!existsSync(join(gameDir, 'index.html'))) {
+  throw new Error(`${GAME_TITLE}: game/index.html is missing`);
+}
+console.log(`[${GAME_TITLE}] ${BUILD_TAG}: staging ${gameEntryCount(gameDir)} game entries`);
 
 mkdirSync(out, { recursive: true });
 cpSync(join(here, 'game'), join(out, 'game'), { recursive: true });

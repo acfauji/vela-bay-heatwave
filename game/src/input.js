@@ -1,53 +1,51 @@
-// Keyboard and pointer input. Held keys give a steering direction; one-shot presses (start or
-// restart, pause) are queued as bit flags and taken once by the loop, so a press between two
-// frames is never lost and never counted twice.
+// Keyboard and pointer capture. `pressed` holds one-frame key events; `keys` is the
+// held state; `dx` is mouse travel for mouse-look camera rotation.
+(function (VB) {
+  'use strict';
 
-export const ACTION_CONFIRM = 1;
-export const ACTION_PAUSE = 2;
+  function Input(canvas) {
+    var self = this;
+    this.keys = {};
+    this.pressed = {};
+    this.pointer = { x: 640, y: 360 };
+    this.pointerDown = false;
+    this.rmbDown = false;
+    this.dx = 0;
+    this.dy = 0;
+    this.onKey = null;
 
-const LEFT = new Set(['ArrowLeft', 'KeyA']);
-const RIGHT = new Set(['ArrowRight', 'KeyD']);
-const CONFIRM = new Set(['Space', 'Enter']);
-const PAUSE = new Set(['KeyP', 'Escape']);
+    window.addEventListener('keydown', function (e) {
+      if (!self.keys[e.code]) self.pressed[e.code] = true;
+      self.keys[e.code] = true;
+      if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab'].indexOf(e.code) >= 0) e.preventDefault();
+      if (self.onKey) self.onKey(e.code, e);
+    });
+    window.addEventListener('keyup', function (e) { self.keys[e.code] = false; });
+    window.addEventListener('blur', function () { self.keys = {}; self.pointerDown = false; self.rmbDown = false; });
+    var target = canvas || window;
+    target.addEventListener('mousemove', function (e) {
+      self.dx += e.movementX || 0;
+      self.dy += e.movementY || 0;
+      var r = target.getBoundingClientRect ? target.getBoundingClientRect() : { left: 0, top: 0 };
+      self.pointer.x = e.clientX - r.left;
+      self.pointer.y = e.clientY - r.top;
+    });
+    target.addEventListener('mousedown', function (e) {
+      if (e.button === 0) self.pointerDown = true;
+      if (e.button === 2) self.rmbDown = true;
+    });
+    window.addEventListener('mouseup', function (e) {
+      if (e.button === 0) self.pointerDown = false;
+      if (e.button === 2) self.rmbDown = false;
+    });
+    target.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+  }
 
-export function createInput(target) {
-  let left = false;
-  let right = false;
-  let actions = 0;
-
-  window.addEventListener('keydown', (event) => {
-    if (LEFT.has(event.code)) left = true;
-    else if (RIGHT.has(event.code)) right = true;
-    else if (CONFIRM.has(event.code)) {
-      if (!event.repeat) actions |= ACTION_CONFIRM;
-    } else if (PAUSE.has(event.code)) {
-      if (!event.repeat) actions |= ACTION_PAUSE;
-    } else return;
-    event.preventDefault();
-  });
-  window.addEventListener('keyup', (event) => {
-    if (LEFT.has(event.code)) left = false;
-    else if (RIGHT.has(event.code)) right = false;
-  });
-  // A key released while the tab is hidden never sends keyup: let go of everything on blur.
-  window.addEventListener('blur', () => {
-    left = false;
-    right = false;
-  });
-  target.addEventListener('pointerdown', () => {
-    actions |= ACTION_CONFIRM;
-  });
-
-  return {
-    /** -1 for left, 1 for right, 0 for neither or both. */
-    direction() {
-      return (right ? 1 : 0) - (left ? 1 : 0);
-    },
-    /** The one-shot presses since the last call, as ACTION_* flags. */
-    takeActions() {
-      const taken = actions;
-      actions = 0;
-      return taken;
-    },
+  Input.prototype.endFrame = function () {
+    this.pressed = {};
+    this.dx = 0;
+    this.dy = 0;
   };
-}
+
+  VB.Input = Input;
+})(window.VB = window.VB || {});

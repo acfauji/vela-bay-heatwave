@@ -1,134 +1,126 @@
-// Boot and the one loop: input is read every frame, the world advances in fixed 1/60 s steps
-// (several in a slow frame, none in a fast one), and the renderer paints what is there. The game
-// moves between four screens: title, play, paused and game over.
-//
-// ?seed=N fixes the falling pattern. ?shot=start|play|end (with &seed=N) stages that scene
-// instead of running the loop, paints it twice and sets window.__shotReady for a screenshot.
-import { BEST_KEY, LIVES, STEP } from './config.js';
-import { createRandom } from './random.js';
-import { createWorld, EVENT_HIT, EVENT_OVER } from './world.js';
-import { ACTION_CONFIRM, ACTION_PAUSE, createInput } from './input.js';
-import { createRenderer, SCREEN_OVER, SCREEN_PAUSED, SCREEN_PLAY, SCREEN_TITLE } from './render.js';
-import { stageShot } from './shots.js';
+// Bootstrap: builds the world, wires the menus and input, renders one full frame
+// synchronously, then runs the loop. ?shot=cover|city|onfoot|mission stages a scene
+// immediately; otherwise the start screen is shown.
+(function (VB) {
+  'use strict';
 
-/** The longest frame the loop catches up on; a longer stall (a hidden tab) is dropped, not replayed. */
-const MAX_FRAME = 0.25;
+  function boot() {
+    var params = new URLSearchParams(window.location.search);
+    var shot = params.get('shot');
+    var seed = parseInt(params.get('seed') || '1337', 10);
+    if (!isFinite(seed)) seed = 1337;
 
-const params = new URLSearchParams(window.location.search);
-const shot = params.get('shot');
-const seedParam = Number.parseInt(params.get('seed') ?? '', 10);
-const seed = Number.isInteger(seedParam) ? seedParam : Math.floor(Math.random() * 4294967296);
+    var canvas = document.getElementById('game');
+    var ctx = canvas.getContext('2d');
+    var size = VB.render.setup(canvas, window.innerWidth || 1280, window.innerHeight || 720);
+    var input = new VB.Input(canvas);
 
-const canvas = document.getElementById('game');
-const status = document.getElementById('status');
-const world = createWorld(createRandom(seed));
-const renderer = createRenderer(canvas);
-
-function readBest() {
-  try {
-    return Number.parseInt(window.localStorage.getItem(BEST_KEY) ?? '0', 10) || 0;
-  } catch {
-    return 0;
-  }
-}
-
-function saveBest(value) {
-  try {
-    window.localStorage.setItem(BEST_KEY, String(value));
-  } catch {
-    // Storage can be off (private windows): the best score then lasts this visit only.
-  }
-}
-
-function runShot(name) {
-  const scene = stageShot(name, world);
-  let painted = 0;
-  function paint() {
-    renderer.draw(world.state, scene.screen, scene.best);
-    painted += 1;
-    if (painted < 2) requestAnimationFrame(paint);
-    else window.__shotReady = true;
-  }
-  requestAnimationFrame(paint);
-}
-
-function runGame() {
-  const input = createInput(canvas);
-  let screen = SCREEN_TITLE;
-  let best = readBest();
-  let accumulator = 0;
-  let last = performance.now();
-
-  // Screen readers (and anyone watching the page's text) hear the screen changes and each hit.
-  function announce(message) {
-    status.textContent = message;
-  }
-
-  function startGame() {
-    world.reset();
-    accumulator = 0;
-    screen = SCREEN_PLAY;
-    announce(`Playing. ${LIVES} lives.`);
-  }
-
-  function endGame() {
-    screen = SCREEN_OVER;
-    if (world.state.score > best) {
-      best = world.state.score;
-      saveBest(best);
+    function fresh() {
+      var s = VB.world.createState(seed);
+      s.pointer = input.pointer;
+      s.onReward = function () { VB.ui.openReward(s); };
+      s.onStage = function () { VB.hud.update(s); };
+      return s;
     }
-    announce(`Game over. Score ${world.state.score}. Best ${best}.`);
-  }
 
-  function handleActions() {
-    const actions = input.takeActions();
-    if (actions & ACTION_CONFIRM && (screen === SCREEN_TITLE || screen === SCREEN_OVER)) startGame();
-    else if (actions & ACTION_PAUSE && screen === SCREEN_PLAY) {
-      screen = SCREEN_PAUSED;
-      announce('Paused.');
-    } else if (actions & (ACTION_PAUSE | ACTION_CONFIRM) && screen === SCREEN_PAUSED) {
-      screen = SCREEN_PLAY;
-      announce('Playing.');
+    var state = fresh();
+    state.pointer = input.pointer;
+
+    function play() {
+      VB.ui.hideScreens();
+      state.screen = 'play';
+      state.input = input;
+      state.frozen = false;
+      VB.audio.unlock();
     }
-  }
 
-  function step() {
-    if (screen === SCREEN_TITLE) {
-      world.step(STEP, 0, true);
-      return;
+    function click(id, fn) {
+      var n = document.getElementById(id);
+      if (n) n.addEventListener('click', function (e) { e.preventDefault(); VB.audio.unlock(); fn(); });
     }
-    const events = world.step(STEP, input.direction(), false);
-    if (events & EVENT_OVER) endGame();
-    else if (events & EVENT_HIT) announce(world.state.lives === 1 ? 'Hit. 1 life left.' : `Hit. ${world.state.lives} lives left.`);
-  }
 
-  function frame(now) {
-    requestAnimationFrame(frame);
-    accumulator += Math.min((now - last) / 1000, MAX_FRAME);
-    last = now;
-    handleActions();
-    if (screen === SCREEN_TITLE || screen === SCREEN_PLAY) {
-      while (accumulator >= STEP && (screen === SCREEN_TITLE || screen === SCREEN_PLAY)) {
-        step();
-        accumulator -= STEP;
+    click('btn-new', function () { state = fresh(); state.pointer = input.pointer; play(); });
+    click('btn-continue', function () {
+      if (!VB.ui.load(state)) { state = fresh(); state.pointer = input.pointer; }
+      play();
+    });
+    click('btn-controls', function () { VB.ui.openControls(state); });
+    click('btn-controls-back', function () { document.getElementById('screen-controls').style.display = 'none'; });
+    click('btn-resume', play);
+    click('btn-pause-save', function () { VB.ui.save(state); });
+    click('btn-pause-load', function () { VB.ui.load(state); play(); });
+    click('btn-pause-map', function () { VB.ui.openMap(state); });
+    click('btn-pause-quit', function () { VB.ui.openMenu(state); });
+    click('btn-map-back', function () { VB.ui.openPause(state); });
+    click('btn-reward-ok', function () { state.rewardPanel = null; play(); });
+    click('btn-mute', function () {
+      var muted = VB.audio.toggle();
+      var n = document.getElementById('btn-mute');
+      if (n) n.textContent = muted ? 'SOUND OFF' : 'SOUND ON';
+    });
+
+    input.onKey = function (code) {
+      if (code === 'Escape') {
+        if (state.screen === 'play') VB.ui.openPause(state);
+        else if (state.screen === 'pause' || state.screen === 'map') play();
+        else if (state.screen === 'reward') { state.rewardPanel = null; play(); }
+      } else if (code === 'KeyM') {
+        if (state.screen === 'play') VB.ui.openMap(state);
+        else if (state.screen === 'map') play();
+      } else if (code === 'KeyV') {
+        var muted = VB.audio.toggle();
+        var n = document.getElementById('btn-mute');
+        if (n) n.textContent = muted ? 'SOUND OFF' : 'SOUND ON';
+      } else if (code === 'KeyC' && state.screen === 'play') {
+        state.camera.chase = !state.camera.chase;
+        VB.world.notify(state, state.camera.chase ? 'CHASE CAMERA ON' : 'CHASE CAMERA OFF', '#9fd8ff');
+      } else if (code === 'Enter' && state.screen === 'menu') {
+        play();
       }
-    } else {
-      accumulator = 0;
+    };
+
+    function renderFrame(dt) {
+      if (state.screen === 'play' && !state.frozen) {
+        state.pointer = input.pointer;
+        if (input.rmbDown) state.camera.angle += input.dx * 0.006;
+        if (input.keys.KeyQ) state.camera.angle -= dt * 1.2;
+        if (input.keys.KeyE) state.camera.angle += dt * 1.2;
+        VB.world.step(state, dt, input);
+      }
+      input.endFrame();
+      VB.render.draw(ctx, state, size.w, size.h);
+      VB.hud.update(state);
     }
-    renderer.draw(world.state, screen, best);
+
+    if (shot && VB.shots.names.indexOf(shot) >= 0) {
+      VB.shots.stageShot(shot, state);
+      VB.ui.hideScreens();
+      renderFrame(0);
+    } else {
+      VB.ui.openMenu(state);
+      renderFrame(0);
+    }
+
+    var last = 0;
+    function loop(ts) {
+      var dt = last ? Math.min(0.05, (ts - last) / 1000) : 0.016;
+      last = ts;
+      renderFrame(dt);
+      window.requestAnimationFrame(loop);
+    }
+    window.requestAnimationFrame(loop);
+
+    window.addEventListener('resize', function () {
+      size = VB.render.setup(canvas, window.innerWidth || 1280, window.innerHeight || 720);
+    });
+
+    window.VB.game = {
+      state: function () { return state; },
+      newGame: function () { state = fresh(); state.pointer = input.pointer; play(); },
+      play: play, renderFrame: renderFrame
+    };
   }
 
-  // Leaving the tab pauses a running game rather than letting blocks fall unseen.
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden && screen === SCREEN_PLAY) {
-      screen = SCREEN_PAUSED;
-      announce('Paused.');
-    }
-  });
-
-  announce('Block Dodger. Press Space or click to start.');
-  requestAnimationFrame(frame);
-}
-
-if (shot) runShot(shot);
-else runGame();
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+})(window.VB = window.VB || {});

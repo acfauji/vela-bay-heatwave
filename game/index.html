@@ -3,17 +3,284 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Block Dodger</title>
+<link rel="icon" href="data:,">
+<title>Vela Bay Heatwave — an original open-world crime game</title>
 <style>
-  html, body { margin: 0; height: 100%; overflow: hidden; background: #11141b; }
-  #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
-  /* Read aloud, never shown: the status line screen readers announce. */
-  #status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  :root { --gold:#ffd45e; --red:#ff6b52; --cyan:#8fe3ff; --green:#8fe3a8; --ink:#0d1219; }
+  html, body { margin:0; height:100%; overflow:hidden; background:#101722; color:#f4ead6;
+    font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; user-select:none; }
+  #game { position:fixed; inset:0; display:block; width:100%; height:100%; touch-action:none; cursor:crosshair; }
+  #hud { position:fixed; inset:0; pointer-events:none; z-index:5; }
+  .panel { position:absolute; background:rgba(12,17,25,0.84); border:1px solid rgba(255,212,94,0.34);
+    border-radius:5px; padding:8px 11px; box-shadow:0 4px 18px rgba(0,0,0,0.38); backdrop-filter:blur(2px); }
+  .lbl { color:#a8bcc8; font-size:10px; letter-spacing:1.5px; text-transform:uppercase; }
+  .gold { color:var(--gold); } .red { color:var(--red); } .cyan { color:var(--cyan); } .green { color:var(--green); }
+  .big { font-size:22px; font-weight:700; letter-spacing:0.5px; }
+  .row { display:flex; align-items:baseline; gap:8px; }
+  .sep { height:1px; background:rgba(255,212,94,0.18); margin:6px 0; }
+
+  #p-mission { left:14px; top:14px; width:332px; border-left:3px solid var(--gold); }
+  #hud-mission-num { font-size:17px; font-weight:700; letter-spacing:1px; }
+  #hud-mission-title { font-size:15px; letter-spacing:1.2px; margin-top:2px; }
+  #hud-stage { font-size:10px; color:#b9c8d0; letter-spacing:0.6px; margin-top:3px; }
+  #hud-objective { font-size:13px; color:#fff3cf; margin-top:8px; line-height:1.3; }
+  #hud-next { font-size:10px; color:#8fa9b8; margin-top:6px; }
+  #hud-distance { font-size:10px; color:var(--cyan); margin-top:3px; }
+
+  #p-status { left:50%; top:14px; transform:translateX(-50%); width:472px; text-align:center; }
+  #hud-wanted-stars { font-size:25px; letter-spacing:3px; line-height:1; }
+  .star.lit { color:var(--red); text-shadow:0 0 8px rgba(255,107,82,0.8); }
+  .star { color:#63707c; }
+  #hud-wanted-state { font-size:11px; letter-spacing:2px; color:var(--red); }
+  #p-status .row { justify-content:center; }
+  .bar { height:6px; background:rgba(255,255,255,0.12); border-radius:3px; overflow:hidden; margin-top:3px; }
+  .bar > i { display:block; height:100%; background:var(--gold); width:0%; }
+
+  #p-right { right:14px; top:14px; width:270px; }
+  #hud-cash { font-size:20px; font-weight:700; color:var(--green); }
+  #hud-rank { font-size:11px; color:var(--gold); }
+  #hud-dispatch-count { font-size:10px; color:#9fb6c8; }
+  #hud-dispatch { margin-top:5px; font-size:10px; }
+  .unit { display:flex; justify-content:space-between; padding:2px 4px; margin-top:2px;
+    background:rgba(90,110,130,0.13); border-left:2px solid #577a90; }
+  .unit.hot { border-left-color:var(--red); background:rgba(255,90,70,0.12); }
+  .unit.norm { border-left-color:var(--cyan); }
+  .unit.off { border-left-color:#777; opacity:0.55; }
+  .unit.idle { border-left-color:#4c5a64; color:#72828c; }
+  .unit .call { color:#e8f0f4; width:62px; } .unit .st { color:var(--gold); flex:1; text-align:center; }
+  .unit .dst { color:#9fb6c8; width:42px; text-align:right; }
+
+  #p-vehicle { left:14px; top:250px; width:300px; border-left:3px solid var(--cyan); }
+  #hud-vmodel { font-size:16px; font-weight:700; letter-spacing:1px; }
+  #hud-vplate { font-size:10px; color:#9fb6c8; }
+  #hud-vcond { color:var(--cyan); font-size:12px; }
+  #p-radio { left:14px; top:382px; width:300px; border-left:3px solid var(--green); }
+  #hud-radio { font-size:12px; color:var(--green); }
+  #hud-radio-track { font-size:10px; color:#9fb6c8; margin-top:2px; }
+
+  #p-map { left:14px; bottom:14px; width:222px; height:222px; padding:5px; }
+  #minimap { width:210px; height:210px; display:block; }
+
+  #p-bars { right:14px; bottom:14px; width:364px; }
+  #hud-weapons { display:flex; flex-direction:column; gap:2px; font-size:10px; }
+  .slot { display:flex; justify-content:space-between; padding:1px 5px; border:1px solid rgba(255,255,255,0.08);
+    background:rgba(255,255,255,0.04); }
+  .slot.active { border-color:var(--gold); background:rgba(255,212,94,0.16); }
+  .slot.locked { opacity:0.45; }
+  .slot .k { color:var(--gold); width:14px; } .slot .n { flex:1; } .slot .a { color:var(--cyan); }
+  #p-bars .bar { margin-top:4px; }
+  #p-bars .bar > i { background:var(--green); }
+  #hud-mode { color:var(--gold); font-size:11px; letter-spacing:2px; }
+
+  #hud-notices { position:absolute; left:50%; top:104px; transform:translateX(-50%); width:540px;
+    text-align:center; font-size:12px; }
+  .notice { padding:3px 8px; margin:2px auto; display:inline-block; background:rgba(10,14,20,0.75);
+    border:1px solid rgba(255,255,255,0.1); border-radius:3px; }
+  #hud-hints { position:absolute; left:50%; bottom:16px; transform:translateX(-50%); font-size:10px;
+    color:rgba(230,240,245,0.7); background:rgba(10,14,20,0.6); padding:5px 12px; border-radius:3px; letter-spacing:0.6px; }
+  #btn-mute { position:absolute; right:14px; bottom:214px; pointer-events:auto; cursor:pointer;
+    background:rgba(12,17,25,0.85); color:#cfe2ea; border:1px solid rgba(143,227,255,0.4);
+    border-radius:3px; font:inherit; font-size:10px; padding:5px 9px; }
+
+  .screen { position:fixed; inset:0; z-index:20; display:none; align-items:center; justify-content:center;
+    background:radial-gradient(circle at 60% 30%, rgba(190,90,60,0.28), rgba(8,12,20,0.93) 62%);
+    color:#f6ead3; }
+  .card { width:min(860px,92vw); max-height:92vh; overflow:auto; background:rgba(11,16,24,0.94);
+    border:1px solid rgba(255,212,94,0.4); border-radius:8px; padding:24px 30px;
+    box-shadow:0 12px 60px rgba(0,0,0,0.6); }
+  .title { font-size:46px; font-weight:800; letter-spacing:6px; color:var(--gold); text-shadow:0 3px 0 #7a341f; }
+  .sub { font-size:13px; letter-spacing:3px; color:#ffb08a; margin-bottom:18px; }
+  h2 { font-size:22px; color:var(--gold); letter-spacing:3px; margin:0 0 12px; }
+  p { font-size:12px; line-height:1.7; color:#c8d6dd; }
+  .menu-btn { display:block; width:100%; text-align:left; background:rgba(255,212,94,0.08);
+    border:1px solid rgba(255,212,94,0.38); color:#f7e6c4; font:inherit; font-size:14px;
+    letter-spacing:1.5px; padding:11px 14px; margin-top:8px; cursor:pointer; border-radius:4px; }
+  .menu-btn:hover { background:rgba(255,212,94,0.22); border-color:var(--gold); }
+  .menu-btn small { color:#9fb6c8; letter-spacing:0.5px; font-size:11px; }
+  .cols { display:flex; gap:24px; } .cols > div { flex:1; }
+  .kv { font-size:11px; color:#a8bcc8; margin:5px 0; }
+  .legend { font-size:11px; color:#c8d6dd; line-height:1.9; }
+  #map-canvas { width:100%; height:300px; border:1px solid rgba(255,212,94,0.3); border-radius:4px; }
+  .mrow { display:flex; font-size:11px; padding:4px 6px; border-bottom:1px solid rgba(255,255,255,0.07); }
+  .mrow.act { background:rgba(255,212,94,0.14); }
+  .mnum { width:44px; color:var(--gold); } .mtitle { flex:1; } .mstate { color:#9fb6c8; }
+  #reward-money { font-size:34px; color:var(--green); font-weight:800; }
+  #reward-rep { font-size:22px; color:var(--gold); }
+  #reward-unlock { font-size:15px; color:var(--cyan); margin-top:12px; }
 </style>
 </head>
 <body>
-<canvas id="game" aria-label="Block Dodger: move the paddle left and right to dodge falling blocks and catch coins"></canvas>
-<p id="status" role="status" aria-live="polite"></p>
-<script type="module" src="./src/main.js"></script>
+<canvas id="game" aria-label="Vela Bay Heatwave open-world crime game"></canvas>
+
+<div id="hud">
+  <div class="panel" id="p-mission">
+    <div class="lbl">CURRENT CONTRACT</div>
+    <div class="row"><span id="hud-mission-num" class="gold">MISSION 1/5</span><span id="hud-mode" class="lbl">ON FOOT</span></div>
+    <div id="hud-mission-title" class="gold">WARM ENGINE</div>
+    <div id="hud-stage" class="lbl">STAGE 1/3</div>
+    <div class="sep"></div>
+    <div id="hud-objective">Reach the Veloce GT</div>
+    <div id="hud-next" class="gold">NEXT: MISSION 2/5</div>
+    <div id="hud-distance" class="cyan">0m TO OBJECTIVE</div>
+  </div>
+
+  <div class="panel" id="p-status">
+    <div id="hud-wanted-stars"></div>
+    <div id="hud-wanted-state">CLEAN</div>
+    <div class="sep"></div>
+    <div class="row" style="justify-content:center"><span id="hud-day" class="lbl">DAY 1 17:15</span><span id="hud-time" class="gold lbl">DUSK</span></div>
+    <div id="hud-location" class="lbl">SOLARIS HEIGHTS</div>
+    <div class="row" style="justify-content:center"><span class="lbl" id="hud-heat-label">HEAT INDEX</span><span id="hud-heat" class="red">68%</span></div>
+    <div class="bar"><i id="hud-heat-bar"></i></div>
+    <div id="hud-tapes" class="lbl">SUNSET TAPES 0/12</div>
+  </div>
+
+  <div class="panel" id="p-right">
+    <div class="row"><span class="lbl">CASH</span><span id="hud-cash" class="green">$2,400</span></div>
+    <div class="sep"></div>
+    <div class="row"><span class="lbl">RESPECT</span><span id="hud-rank" class="gold">OUTSIDER</span></div>
+    <div class="row"><span class="lbl">XP</span><span id="hud-rep" class="cyan">0</span><span id="hud-rep-target" class="lbl">0/120 XP</span></div>
+    <div class="bar"><i id="hud-rep-bar"></i></div>
+    <div class="sep"></div>
+    <div class="row"><span class="lbl">VBD RESPONSE</span><span id="hud-dispatch-count" class="lbl">0 UNITS</span></div>
+    <div id="hud-dispatch"></div>
+  </div>
+
+  <div class="panel" id="p-vehicle">
+    <div class="lbl">VEHICLE IDENTITY</div>
+    <div id="hud-vmodel">VELOCE GT</div>
+    <div class="row"><span id="hud-vspeed" class="gold">0 KM/H</span><span id="hud-vgear" class="gold">G1</span><span id="hud-vcond" class="cyan">100%</span></div>
+    <div class="bar"><i id="hud-vcond-bar"></i></div>
+    <div id="hud-vplate" class="lbl">VLB-417</div>
+  </div>
+
+  <div class="panel" id="p-radio">
+    <div class="lbl">RADIO</div>
+    <div id="hud-radio" class="green">SOLAR FM 101.9 · SUNSET POP</div>
+    <div id="hud-radio-track">NOW: Rook On The Run</div>
+  </div>
+
+  <div class="panel" id="p-map"><canvas id="minimap" width="210" height="210"></canvas></div>
+
+  <div class="panel" id="p-bars">
+    <div id="hud-weapons"></div>
+    <div class="sep"></div>
+    <div class="row"><span class="lbl">HEALTH</span><span id="hud-health" class="green">100</span><span class="lbl">ARMOUR</span><span id="hud-armor" class="cyan">0</span><span class="lbl">STAMINA</span><span id="hud-stamina" class="gold">100</span></div>
+    <div class="bar"><i id="hud-health-bar"></i></div>
+    <div class="bar"><i id="hud-armor-bar"></i></div>
+    <div class="bar"><i id="hud-stamina-bar"></i></div>
+  </div>
+
+  <div id="hud-notices"></div>
+  <div id="hud-hints">WASD MOVE/DRIVE · SHIFT SPRINT · SPACE HANDBRAKE/DODGE · F ENTER/EXIT CAR · CLICK SHOOT · R RELOAD · 1-5 WEAPONS · Q/E MOUSE LOOK · C CHASE CAM · M MAP · ESC PAUSE</div>
+  <button id="btn-mute" type="button">SOUND ON</button>
+</div>
+
+<div class="screen" id="screen-menu">
+  <div class="card">
+    <div class="title">VELA BAY</div>
+    <div class="sub">HEATWAVE  —  AN ORIGINAL OPEN-WORLD CRIME CITY</div>
+    <div class="cols">
+      <div>
+        <button class="menu-btn" id="btn-continue" type="button">CONTINUE<br><small id="continue-line">NO SAVE YET</small></button>
+        <button class="menu-btn" id="btn-new" type="button">NEW GAME  —  DAY 1, THE HEAT IS RISING</button>
+        <button class="menu-btn" id="btn-controls" type="button">HOW TO PLAY / CONTROLS</button>
+        <div class="kv" id="save-line" style="margin-top:14px">SAVE SLOT 1 • EMPTY</div>
+      </div>
+      <div>
+        <div class="kv">PLAYER — <span class="gold">ROOK ADISA</span>, GETAWAY DRIVER</div>
+        <div class="kv">FIXER — <span class="gold">TEZ BRANN</span>  |  WIRE MAN — <span class="gold">OMAR FITCH</span></div>
+        <div class="kv">MUSCLE — <span class="gold">BO TULL</span>  |  DETECTIVE — <span class="red">VANCE</span></div>
+        <div class="sep"></div>
+        <p>Five contracts. Nine districts. A city baking under a record heatwave. Steal any car,
+          outrun the VBD, take the contracts that pay, and disappear before the curfew sirens.</p>
+        <div class="legend">5 STORY MISSIONS · 8 CAR MODELS · TRAFFIC + PEDESTRIANS<br>
+          5-STAR POLICE RESPONSE · SHOOTING · SAVE SLOT · RADIO · PAUSE MAP</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="screen" id="screen-pause">
+  <div class="card" style="width:min(520px,92vw)">
+    <h2>PAUSED</h2>
+    <p id="pause-summary">DAY 1</p>
+    <button class="menu-btn" id="btn-resume" type="button">RESUME</button>
+    <button class="menu-btn" id="btn-pause-map" type="button">MAP / MISSIONS / STATS [M]</button>
+    <button class="menu-btn" id="btn-pause-save" type="button">SAVE GAME — SLOT 1</button>
+    <button class="menu-btn" id="btn-pause-load" type="button">LOAD GAME — SLOT 1</button>
+    <button class="menu-btn" id="btn-pause-quit" type="button">QUIT TO TITLE</button>
+  </div>
+</div>
+
+<div class="screen" id="screen-map">
+  <div class="card">
+    <h2>VELA BAY — DISTRICT MAP</h2>
+    <div class="cols">
+      <div><canvas id="map-canvas" width="560" height="300"></canvas>
+        <div class="legend" style="margin-top:8px">
+          <span class="gold">S</span> SAFEHOUSE · <span class="gold">M</span> MISSION ·
+          <span class="red">P</span> POLICE · <span class="cyan">D</span> DOCKS ·
+          <span class="cyan">T</span> SUNSET TAPE · WHITE DOT = YOU · GOLD RING = OBJECTIVE
+        </div>
+      </div>
+      <div>
+        <div class="lbl">STORY CONTRACTS</div>
+        <div id="map-missions"></div>
+        <div class="sep"></div>
+        <div class="lbl">DISTRICTS</div>
+        <div class="legend">SOLARIS HEIGHTS · TIDEWATER · MIRADOR<br>
+          OLD QUAY · CABO VISTA · IRONWORKS<br>
+          PELICAN FLATS · SABLE ROW · THE CAUSEWAY</div>
+      </div>
+    </div>
+    <div class="sep"></div>
+    <div id="map-stats" class="kv">CASH $0 • RESPECT 0 • SAVE SLOT 1 0%</div>
+    <button class="menu-btn" id="btn-map-back" type="button">RESUME [M / ESC]</button>
+  </div>
+</div>
+
+<div class="screen" id="screen-reward">
+  <div class="card" style="width:min(560px,92vw); text-align:center">
+    <h2 id="reward-title">MISSION PASSED</h2>
+    <div id="reward-mission" class="sub">MISSION 1/5</div>
+    <div id="reward-money">+$1,500</div>
+    <div id="reward-rep">+100 REP</div>
+    <div id="reward-unlock" class="gold">UNLOCKED: VESPER 9 PISTOL</div>
+    <div id="reward-next" class="kv">UP NEXT: SUNDAY TRAFFIC</div>
+    <button class="menu-btn" id="btn-reward-ok" type="button">CONTINUE</button>
+  </div>
+</div>
+
+<div class="screen" id="screen-controls">
+  <div class="card" style="width:min(620px,92vw)">
+    <h2>HOW TO PLAY</h2>
+    <div class="legend">
+      [W][A][S][D] — walk / drive / steer<br>
+      MOUSE — aim, RIGHT-DRAG / [Q][E] — rotate camera<br>
+      [SHIFT] — sprint  ·  [SPACE] — dodge / handbrake  ·  [C] — chase camera<br>
+      [F] — steal / enter / exit any car  ·  LEFT CLICK — shoot  ·  [R] — reload<br>
+      [1]-[5] — FISTS / VESPER 9 / MARLIN SMG / TIDE RIFLE / SUNSET TUBE<br>
+      [M] — map, districts, missions, stats  ·  [ESC] — pause / save / load<br>
+      [V] — mute  ·  Crimes raise the wanted level; hide until the VBD loses you.
+    </div>
+    <button class="menu-btn" id="btn-controls-back" type="button">BACK</button>
+  </div>
+</div>
+
+<script src="./src/config.js"></script>
+<script src="./src/rng.js"></script>
+<script src="./src/city.js"></script>
+<script src="./src/entities.js"></script>
+<script src="./src/missions.js"></script>
+<script src="./src/world.js"></script>
+<script src="./src/render.js"></script>
+<script src="./src/minimap.js"></script>
+<script src="./src/hud.js"></script>
+<script src="./src/audio.js"></script>
+<script src="./src/input.js"></script>
+<script src="./src/ui.js"></script>
+<script src="./src/shots.js"></script>
+<script src="./src/main.js"></script>
 </body>
 </html>
